@@ -249,10 +249,6 @@ def main(**kwargs):
                     flexion_1_index = -angle_between(vec_for_flexion_1, vertical_vec) + np.pi
                     flexion_2_index = angle_between(index_lower_vector, index_middle_vector)
                     flexion_3_index = angle_between(index_middle_vector, index_upper_vector)
-                    # print(f"flexion 1: {np.degrees(flexion_1)}, flexion_2: {np.degrees(flexion_2)}, flexion_3: {np.degrees(flexion_3)}")
-
-
-
 
                     # Middle finger vectors
                     middle_lower_vector = middle_mcp - middle_pip
@@ -264,12 +260,6 @@ def main(**kwargs):
                     flexion_1_middle = -angle_between(vec_for_flexion_1_middle, vertical_vec) + np.pi
                     flexion_2_middle = angle_between(middle_lower_vector, middle_middle_vector)
                     flexion_3_middle = angle_between(middle_middle_vector, middle_upper_vector)
-                    # print(f"Middle Finger -> flexion 1: {np.degrees(flexion_1_middle)}, "
-                    #     f"flexion 2: {np.degrees(flexion_2_middle)}, "
-                    #     f"flexion 3: {np.degrees(flexion_3_middle)}")
-
-
-
 
                     # Ring finger vectors
                     ring_lower_vector = ring_mcp - ring_pip
@@ -281,19 +271,13 @@ def main(**kwargs):
                     flexion_1_ring = -angle_between(vec_for_flexion_1_ring, vertical_vec) + np.pi
                     flexion_2_ring = angle_between(ring_lower_vector, ring_middle_vector)
                     flexion_3_ring = angle_between(ring_middle_vector, ring_upper_vector)
-                    # print(f"Ring Finger -> flexion 1: {np.degrees(flexion_1_ring)}, "
-                    #     f"flexion 2: {np.degrees(flexion_2_ring)}, "
-                    #     f"flexion 3: {np.degrees(flexion_3_ring)}")
 
-                    
-
-
-                    # Corrected Thumb vectors
+                    # Thumb vectors
                     thumb_lower_vector = thumb_mcp - thumb_cmc  # From carpometacarpal to metacarpophalangeal joint
                     thumb_middle_vector = thumb_mcp - thumb_ip  # From MCP to interphalangeal joint
                     thumb_upper_vector = thumb_ip - thumb_tip  # From IP to tip
 
-                    # Corrected projection for first flexion
+                    # Projection for first flexion
                     vec_for_flexion_1_thumb = project_vector_onto_plane(thumb_lower_vector, palm_norm)
 
                     # Flexion Angles
@@ -305,43 +289,11 @@ def main(**kwargs):
                     vec_for_abduction_thumb = project_vector_onto_plane(thumb_lower_vector, palm_norm)
                     abduction_thumb = angle_between(vec_for_abduction_thumb, horizontal_vec)
 
-                    # Print Results
-                    # print(f"Thumb -> flexion 1: {np.degrees(flexion_1_thumb)}, "
-                    #     f"flexion 2: {np.degrees(flexion_2_thumb)}, "
-                    #     f"flexion 3: {np.degrees(flexion_3_thumb)}, "
-                    #     f"abduction: {np.degrees(abduction_thumb)}")
-
-
-
-
-
-
-
-
-                    # horizontal_reference = np.array(index_mcp) - np.array(pinky_mcp)
-                    # print(horizontal_reference)
-
-
                     # # Calculate abduction angles for the index finger
                     index_abduction = tracker.decompose_angle(landmarks[0], landmarks[5], landmarks[6], plane='xy')
                     middle_abduction = tracker.decompose_angle(landmarks[0], landmarks[9], landmarks[10], plane='xy')
                     ring_abduction = tracker.decompose_angle(landmarks[0], landmarks[13], landmarks[14], plane='xy')
 
-
-                    # index_flexion_1 = tracker.decompose_angle(landmarks[0], landmarks[5], landmarks[6], plane='yz')
-                    # index_flexion_2 = tracker.decompose_angle(landmarks[5], landmarks[6], landmarks[7], plane='xz')
-                    # index_flexion_3 = tracker.decompose_angle(landmarks[6], landmarks[7], landmarks[8], plane='xz')
-
-                    # # Append to joint_angles
-                    # joint_angles = [index_abduction_1+2*np.pi,index_flexion_1+2*np.pi,index_flexion_2+2*np.pi,index_flexion_3+2*np.pi]
-
-                    # print(f"Joint Angles: {joint_angles}")
-                    # pose = np.array([0,joint_angles[1],0,0,0,0,0,0,0,0,0,0,0,0,0,0])
-
-
-
-                    # print(-flexion_1_thumb+.7)
-                    print(-flexion_2_thumb+np.pi)
 
                     pose = np.array([index_abduction+2*np.pi - .4,flexion_1_index,flexion_2_index,flexion_3_index,
                                      middle_abduction+2*np.pi - .2,flexion_1_middle,flexion_2_middle,flexion_3_middle,
