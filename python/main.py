@@ -179,7 +179,7 @@ def project_vector_onto_plane(vector, plane_normal):
 
 #init the node
 def main(**kwargs):
-    # leap_hand = LeapNode()
+    leap_hand = LeapNode()
     tracker = Tracker()
     cap = cv2.VideoCapture(0)
 
@@ -210,11 +210,29 @@ def main(**kwargs):
                     landmarks = [(lm.x, lm.y, lm.z) for lm in hand_landmarks.landmark]
 
                     # palm frame
-                    wrist = np.array(landmarks[0])
-                    index_mcp = np.array(landmarks[5])
-                    index_pip = np.array(landmarks[6])
-                    ring_mcp = np.array(landmarks[13])
-                    pinky_mcp = np.array(landmarks[17])
+                    # Define all landmarks as numpy arrays
+                    wrist = np.array(landmarks[0])            # Wrist
+                    thumb_cmc = np.array(landmarks[1])        # Thumb carpometacarpal joint
+                    thumb_mcp = np.array(landmarks[2])        # Thumb metacarpophalangeal joint
+                    thumb_ip = np.array(landmarks[3])         # Thumb interphalangeal joint
+                    thumb_tip = np.array(landmarks[4])        # Thumb tip
+                    index_mcp = np.array(landmarks[5])        # Index finger metacarpophalangeal joint
+                    index_pip = np.array(landmarks[6])        # Index finger proximal interphalangeal joint
+                    index_dip = np.array(landmarks[7])        # Index finger distal interphalangeal joint
+                    index_tip = np.array(landmarks[8])        # Index finger tip
+                    middle_mcp = np.array(landmarks[9])       # Middle finger metacarpophalangeal joint
+                    middle_pip = np.array(landmarks[10])      # Middle finger proximal interphalangeal joint
+                    middle_dip = np.array(landmarks[11])      # Middle finger distal interphalangeal joint
+                    middle_tip = np.array(landmarks[12])      # Middle finger tip
+                    ring_mcp = np.array(landmarks[13])        # Ring finger metacarpophalangeal joint
+                    ring_pip = np.array(landmarks[14])        # Ring finger proximal interphalangeal joint
+                    ring_dip = np.array(landmarks[15])        # Ring finger distal interphalangeal joint
+                    ring_tip = np.array(landmarks[16])        # Ring finger tip
+                    pinky_mcp = np.array(landmarks[17])       # Pinky finger metacarpophalangeal joint
+                    pinky_pip = np.array(landmarks[18])       # Pinky finger proximal interphalangeal joint
+                    pinky_dip = np.array(landmarks[19])       # Pinky finger distal interphalangeal joint
+                    pinky_tip = np.array(landmarks[20])       # Pinky finger tip
+
                     
                     # vertical wrt up and down your hand. palm norm is out of the palm
                     vertical_vec = ring_mcp - wrist
@@ -223,16 +241,76 @@ def main(**kwargs):
 
                     # vector between mcp and pip. project it onto the palm plane for abduction
                     index_lower_vector = index_mcp - index_pip
-                    vec_for_abduction = project_vector_onto_plane(index_lower_vector, palm_norm)
+                    index_middle_vector = index_pip - index_dip
+                    index_upper_vector = index_dip - index_tip
+                    vec_for_flexion_1 = project_vector_onto_plane(index_lower_vector, horizontal_vec)
 
-                    # this gets the abduction angle
-                    abduction = angle_between(vec_for_abduction, vertical_vec) - np.pi
-                    # print(np.degrees(abduction))
+                    # this gets the flexion angles
+                    flexion_1_index = -angle_between(vec_for_flexion_1, vertical_vec) + np.pi
+                    flexion_2_index = angle_between(index_lower_vector, index_middle_vector)
+                    flexion_3_index = angle_between(index_middle_vector, index_upper_vector)
+                    # print(f"flexion 1: {np.degrees(flexion_1)}, flexion_2: {np.degrees(flexion_2)}, flexion_3: {np.degrees(flexion_3)}")
 
-                    # 
-                    vec_for_flexion = project_vector_onto_plane(index_lower_vector, horizontal_vec)
-                    flexion = angle_between(vec_for_flexion, vertical_vec)
-                    print(np.degrees(flexion))
+
+
+
+                    # Middle finger vectors
+                    middle_lower_vector = middle_mcp - middle_pip
+                    middle_middle_vector = middle_pip - middle_dip
+                    middle_upper_vector = middle_dip - middle_tip
+                    vec_for_flexion_1_middle = project_vector_onto_plane(middle_lower_vector, horizontal_vec)
+
+                    # Middle finger flexion angles
+                    flexion_1_middle = -angle_between(vec_for_flexion_1_middle, vertical_vec) + np.pi
+                    flexion_2_middle = angle_between(middle_lower_vector, middle_middle_vector)
+                    flexion_3_middle = angle_between(middle_middle_vector, middle_upper_vector)
+                    # print(f"Middle Finger -> flexion 1: {np.degrees(flexion_1_middle)}, "
+                    #     f"flexion 2: {np.degrees(flexion_2_middle)}, "
+                    #     f"flexion 3: {np.degrees(flexion_3_middle)}")
+
+
+
+
+                    # Ring finger vectors
+                    ring_lower_vector = ring_mcp - ring_pip
+                    ring_middle_vector = ring_pip - ring_dip
+                    ring_upper_vector = ring_dip - ring_tip
+                    vec_for_flexion_1_ring = project_vector_onto_plane(ring_lower_vector, horizontal_vec)
+
+                    # Ring finger flexion angles
+                    flexion_1_ring = -angle_between(vec_for_flexion_1_ring, vertical_vec) + np.pi
+                    flexion_2_ring = angle_between(ring_lower_vector, ring_middle_vector)
+                    flexion_3_ring = angle_between(ring_middle_vector, ring_upper_vector)
+                    # print(f"Ring Finger -> flexion 1: {np.degrees(flexion_1_ring)}, "
+                    #     f"flexion 2: {np.degrees(flexion_2_ring)}, "
+                    #     f"flexion 3: {np.degrees(flexion_3_ring)}")
+
+                    
+
+
+                    # Corrected Thumb vectors
+                    thumb_lower_vector = thumb_mcp - thumb_cmc  # From carpometacarpal to metacarpophalangeal joint
+                    thumb_middle_vector = thumb_mcp - thumb_ip  # From MCP to interphalangeal joint
+                    thumb_upper_vector = thumb_ip - thumb_tip  # From IP to tip
+
+                    # Corrected projection for first flexion
+                    vec_for_flexion_1_thumb = project_vector_onto_plane(thumb_lower_vector, palm_norm)
+
+                    # Flexion Angles
+                    flexion_1_thumb = angle_between(vec_for_flexion_1_thumb, vertical_vec)
+                    flexion_2_thumb = angle_between(thumb_lower_vector, thumb_middle_vector)
+                    flexion_3_thumb = angle_between(thumb_middle_vector, thumb_upper_vector)
+
+                    # Abduction (projecting lower vector onto palm plane)
+                    vec_for_abduction_thumb = project_vector_onto_plane(thumb_lower_vector, palm_norm)
+                    abduction_thumb = angle_between(vec_for_abduction_thumb, horizontal_vec)
+
+                    # Print Results
+                    # print(f"Thumb -> flexion 1: {np.degrees(flexion_1_thumb)}, "
+                    #     f"flexion 2: {np.degrees(flexion_2_thumb)}, "
+                    #     f"flexion 3: {np.degrees(flexion_3_thumb)}, "
+                    #     f"abduction: {np.degrees(abduction_thumb)}")
+
 
 
 
@@ -245,7 +323,11 @@ def main(**kwargs):
 
 
                     # # Calculate abduction angles for the index finger
-                    # index_abduction_1 = tracker.decompose_angle(landmarks[0], landmarks[5], landmarks[6], plane='xy')
+                    index_abduction = tracker.decompose_angle(landmarks[0], landmarks[5], landmarks[6], plane='xy')
+                    middle_abduction = tracker.decompose_angle(landmarks[0], landmarks[9], landmarks[10], plane='xy')
+                    ring_abduction = tracker.decompose_angle(landmarks[0], landmarks[13], landmarks[14], plane='xy')
+
+
                     # index_flexion_1 = tracker.decompose_angle(landmarks[0], landmarks[5], landmarks[6], plane='yz')
                     # index_flexion_2 = tracker.decompose_angle(landmarks[5], landmarks[6], landmarks[7], plane='xz')
                     # index_flexion_3 = tracker.decompose_angle(landmarks[6], landmarks[7], landmarks[8], plane='xz')
@@ -257,15 +339,26 @@ def main(**kwargs):
                     # pose = np.array([0,joint_angles[1],0,0,0,0,0,0,0,0,0,0,0,0,0,0])
 
 
-                    # try:
-                    #     leap_hand.set_allegro(pose)
-                    # except Exception as e:
-                    #     print(f"YOU MIGHT WANNA DEAL WITH {e}")
+
+                    # print(-flexion_1_thumb+.7)
+                    print(-flexion_2_thumb+np.pi)
+
+                    pose = np.array([index_abduction+2*np.pi - .4,flexion_1_index,flexion_2_index,flexion_3_index,
+                                     middle_abduction+2*np.pi - .2,flexion_1_middle,flexion_2_middle,flexion_3_middle,
+                                     ring_abduction+2*np.pi - .2,flexion_1_ring,flexion_2_ring,flexion_3_ring,
+                                     -flexion_1_thumb+.7,0,-flexion_2_thumb*.8+3.6,flexion_3_thumb])#abduction_thumb, flexion_2_thumb,flexion_3_thumb,])
+
+                    try:
+                        leap_hand.set_allegro(pose)
+                    except Exception as e:
+                        print(f"YOU MIGHT WANNA DEAL WITH {e}")
 
             cv2.imshow("Hand Tracking", frame)
 
             if cv2.waitKey(10) & 0xFF == ord('q'):
                 break
+
+            time.sleep(.06)
 
     cap.release()
     cv2.destroyAllWindows()
