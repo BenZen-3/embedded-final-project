@@ -95,10 +95,10 @@ class Tracker:
 
     def __init__(self):
         # Initialize MediaPipe Hands
-        mp_hands = mp.solutions.hands
-        mp_drawing = mp.solutions.drawing_utils
+        self.mp_hands = mp.solutions.hands
+        self.mp_drawing = mp.solutions.drawing_utils
 
-    def decompose_angle(a, b, c, plane='xz'):
+    def decompose_angle(self, a, b, c, plane='xz'):
         ba = np.array([a[0] - b[0], a[1] - b[1], a[2] - b[2]])
         bc = np.array([c[0] - b[0], c[1] - b[1], c[2] - b[2]])
         
@@ -123,16 +123,69 @@ class Tracker:
 
 
 
+
+def angle_between(v1, v2):
+    """Calculates the angle between two 3D vectors in radians."""
+
+    dot_product = np.dot(v1, v2)
+    mag_v1 = np.linalg.norm(v1)
+    mag_v2 = np.linalg.norm(v2)
+
+    cos_theta = dot_product / (mag_v1 * mag_v2)
+
+    # Handle potential floating-point errors
+    cos_theta = np.clip(cos_theta, -1, 1) 
+
+    angle_rad = np.arccos(cos_theta)
+    return angle_rad
+
+
+def normal_from_points(p1, p2, p3):
+    """Calculate the normal vector to the plane defined by three points."""
+
+    v1 = p2 - p1
+    v2 = p3 - p1
+
+    normal = np.cross(v1, v2)
+    return normal / np.linalg.norm(normal)  # Normalize the vector
+
+
+
+def project_vector_onto_plane(vector, plane_normal):
+    """
+    Projects a vector onto a plane defined by its normal vector.
+
+    Args:
+        vector (np.array): The vector to be projected.
+        plane_normal (np.array): The normal vector of the plane.
+
+    Returns:
+        np.array: The projected vector.
+    """
+
+    # Normalize the plane normal vector
+    plane_normal = plane_normal / np.linalg.norm(plane_normal)
+
+    # Calculate the projection of the vector onto the normal vector
+    projection_onto_normal = np.dot(vector, plane_normal) * plane_normal
+
+    # Subtract the projection from the original vector to get the projection onto the plane
+    projected_vector = vector - projection_onto_normal
+
+    return projected_vector
+
+
+
+
 #init the node
 def main(**kwargs):
-    leap_hand = LeapNode()
+    # leap_hand = LeapNode()
     tracker = Tracker()
     cap = cv2.VideoCapture(0)
 
     with tracker.mp_hands.Hands(min_detection_confidence=0.7, 
                     min_tracking_confidence=0.7, 
                     max_num_hands=1) as hands:
-
 
         while cap.isOpened():
             ret, frame = cap.read()
@@ -156,40 +209,68 @@ def main(**kwargs):
                     # Get coordinates of landmarks
                     landmarks = [(lm.x, lm.y, lm.z) for lm in hand_landmarks.landmark]
 
-                    # Calculate abduction angles for the index finger
-                    index_abduction_1 = tracker.decompose_angle(landmarks[0], landmarks[5], landmarks[6], plane='xz')
-                    index_flexion_1 = tracker.decompose_angle(landmarks[0], landmarks[5], landmarks[6], plane='yz')
-                    index_flexion_2 = tracker.decompose_angle(landmarks[5], landmarks[6], landmarks[7], plane='xz')
-                    index_flexion_3 = tracker.decompose_angle(landmarks[6], landmarks[7], landmarks[8], plane='xz')
+                    # palm frame
+                    wrist = np.array(landmarks[0])
+                    index_mcp = np.array(landmarks[5])
+                    index_pip = np.array(landmarks[6])
+                    ring_mcp = np.array(landmarks[13])
+                    pinky_mcp = np.array(landmarks[17])
+                    
+                    # vertical wrt up and down your hand. palm norm is out of the palm
+                    vertical_vec = ring_mcp - wrist
+                    horizontal_vec = index_mcp - pinky_mcp
+                    palm_norm = normal_from_points(wrist, index_mcp, pinky_mcp)
 
-                    # Append to joint_angles
-                    joint_angles = [index_abduction_1+2*np.pi,index_flexion_1+2*np.pi,index_flexion_2+2*np.pi,index_flexion_3+2*np.pi]
+                    # vector between mcp and pip. project it onto the palm plane for abduction
+                    index_lower_vector = index_mcp - index_pip
+                    vec_for_abduction = project_vector_onto_plane(index_lower_vector, palm_norm)
 
-                    print(f"Joint Angles: {joint_angles}")
+                    # this gets the abduction angle
+                    abduction = angle_between(vec_for_abduction, vertical_vec) - np.pi
+                    # print(np.degrees(abduction))
 
-
-
-
-
-                    pose = np.array([joint_angles[0],0,0,0,0,0,0,0,0,0,0,0,0,0,0,0])
-                    leap_hand.set_allegro(pose)
-
-
-
-        # while True:
+                    # 
+                    vec_for_flexion = project_vector_onto_plane(index_lower_vector, horizontal_vec)
+                    flexion = angle_between(vec_for_flexion, vertical_vec)
+                    print(np.degrees(flexion))
 
 
-            
 
 
-        #     pose = np.array([-0.785398,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0])
 
-        #     leap_hand.set_allegro(pose)
 
-        #     #Set to an open pose and read the joint angles 33hz
-        #     # leap_hand.set_allegro(np.zeros(16))
-        #     # print("Position: " + str(leap_hand.read_pos()))
-        #     time.sleep(0.03)
+
+                    # horizontal_reference = np.array(index_mcp) - np.array(pinky_mcp)
+                    # print(horizontal_reference)
+
+
+                    # # Calculate abduction angles for the index finger
+                    # index_abduction_1 = tracker.decompose_angle(landmarks[0], landmarks[5], landmarks[6], plane='xy')
+                    # index_flexion_1 = tracker.decompose_angle(landmarks[0], landmarks[5], landmarks[6], plane='yz')
+                    # index_flexion_2 = tracker.decompose_angle(landmarks[5], landmarks[6], landmarks[7], plane='xz')
+                    # index_flexion_3 = tracker.decompose_angle(landmarks[6], landmarks[7], landmarks[8], plane='xz')
+
+                    # # Append to joint_angles
+                    # joint_angles = [index_abduction_1+2*np.pi,index_flexion_1+2*np.pi,index_flexion_2+2*np.pi,index_flexion_3+2*np.pi]
+
+                    # print(f"Joint Angles: {joint_angles}")
+                    # pose = np.array([0,joint_angles[1],0,0,0,0,0,0,0,0,0,0,0,0,0,0])
+
+
+                    # try:
+                    #     leap_hand.set_allegro(pose)
+                    # except Exception as e:
+                    #     print(f"YOU MIGHT WANNA DEAL WITH {e}")
+
+            cv2.imshow("Hand Tracking", frame)
+
+            if cv2.waitKey(10) & 0xFF == ord('q'):
+                break
+
+    cap.release()
+    cv2.destroyAllWindows()
+
 
 if __name__ == "__main__":
     main()
+    
