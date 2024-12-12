@@ -9,6 +9,7 @@ import mediapipe as mp
 import numpy as np
 import math
 import serial.tools.list_ports
+from enum import Enum, auto
 
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
@@ -51,10 +52,9 @@ class LeapHand:
         """Find open serial ports and test. returns if a port was found"""
 
         ports = serial.tools.list_ports.comports()
-        ports = [port.device for port in ports]  # name only
-        
+
         # scan all ports
-        for port in ports:
+        for port in [port.device for port in ports]: #this is only scaning the names
             try:
                 self.dxl_client = DynamixelClient(motors, port, 4000000)
                 self.dxl_client.connect()
@@ -156,6 +156,206 @@ def project_vector_onto_plane(vector, plane_normal):
 
     return projected_vector
 
+class Game:
+
+    class GameState(Enum):
+        """State of the Game"""
+        ERROR = auto()
+        MENU = auto()
+        TELEOPERATION = auto()
+        WALKING = auto()
+        DANCE = auto()
+        
+    class Gestures(Enum):
+        """duh"""
+        NO_GESTURE = auto()
+        OPEN_PALM = auto()
+        VICTORY = auto()
+        CLOSED_FIST = auto()
+        THUMB_UP = auto()
+        THUMB_DOWN = auto()
+        I_LOVE_YOU = auto()
+        POINTING_UP = auto()
+
+    def __init__(self):
+        """init the game"""
+        self.state = self.GameState.TELEOPERATION
+        self.recent_gestures = []
+
+        self.start()
+        self.loop()
+
+    def start(self):
+        """start the game. not the same as init"""
+        self.leap_hand = LeapHand()
+        self.tracker = Tracker()
+
+        self.cap = cv2.VideoCapture(0)
+        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+
+        self.hold_time = 2
+
+    def loop(self):
+
+        with self.tracker.mp_hands.Hands(min_detection_confidence=0.7, 
+                    min_tracking_confidence=0.7, 
+                    max_num_hands=1) as hands:
+
+            # only while the ecapture window is open
+            while self.cap.isOpened():
+                ret, frame = self.cap.read()
+                if not ret:
+                    break
+
+                # Flip and convert the frame color
+                frame = cv2.flip(frame, 1)
+                image_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=image_rgb)
+
+                # track gesture
+                self.track_gesture(mp_image)
+
+                # print(self.recent_gestures)
+                
+                # check for state changes
+                self.check_state_change()
+
+
+
+
+
+
+                # self.run_state()
+
+
+                ########### OTHER TRACKING HERE #####
+                # Process the frame and get hand landmarks
+                # result = hands.process(image_rgb)
+
+                self.clear_old_gestures(15)
+                self.tracker.recognition_result_list.clear() # clear the big list
+                cv2.imshow("Hand Tracking", frame) # display (can be removed)
+
+                if cv2.waitKey(10) & 0xFF == ord('q'):
+                    break
+
+                time.sleep(.06)
+
+        self.close()
+                
+    def track_gesture(self, mp_image):
+        """tracks the gesutres"""
+
+        self.tracker.recognizer.recognize_async(mp_image, time.time_ns() // 1_000_000)
+
+        current_gesture = self.Gestures.NO_GESTURE
+
+        if self.tracker.recognition_result_list:
+            top_gesture = self.tracker.recognition_result_list[0].gestures
+            # print(tracker.recognition_result_list[0].gestures)
+            if "Open_Palm" in str(top_gesture):
+                current_gesture = self.Gestures.OPEN_PALM
+            elif "Victory" in str(top_gesture):
+                current_gesture = self.Gestures.VICTORY
+            elif "Closed_Fist" in str(top_gesture):
+                current_gesture = self.Gestures.CLOSED_FIST
+            elif "Thumb_Up" in str(top_gesture):
+                current_gesture = self.Gestures.THUMB_UP
+            elif "Thumb_Down" in str(top_gesture):
+                current_gesture = self.Gestures.THUMB_DOWN
+            elif "ILoveYou" in str(top_gesture):
+                current_gesture = self.Gestures.I_LOVE_YOU
+            elif "Pointing_Up" in str(top_gesture):
+                current_gesture = self.Gestures.POINTING_UP
+
+        # append a tuple of the current gesture and the time
+        self.recent_gestures.append((current_gesture, time.time()))
+
+    def clear_old_gestures(self, time_threshold):
+        """get rid of anything older than time_threshold"""
+
+        pass
+
+    def run_state(self):
+        """rn the current game state"""
+
+        # i am old and dont know how the new match thing workds
+        if self.state == self.GameState.ERROR:
+            # restart the game
+            pass
+        elif self.state == self.GameState.MENU:
+            self.menu()
+        elif self.state == self.GameState.TELEOPERATION:
+            self.teleoperate()
+        elif self.state == self.GameState.DANCE:
+            self.dance()
+        elif self.state == self.GameState.WALKING:
+            self.walk()        
+
+    def check_state_change(self):
+        """based on the current state, check if there can be a state change"""
+        
+        current_gesture = self.get_current_gesture(self.hold_time)
+        print(current_gesture)
+
+        
+
+    def get_current_gesture(self, hold_time):
+        """returns the current gesture if its been active for the hold time"""
+
+        # checks for how old the list is
+        if (time.time() - self.recent_gestures[0][1]) < hold_time:
+            return self.Gestures.NO_GESTURE
+
+        active_gesture = self.recent_gestures[-1][0]
+        active_gesture_time = self.recent_gestures[-1][1]
+
+        # gesture is valid if its close enough in time
+        nearness_threshold = 1
+        if (time.time() - active_gesture_time < nearness_threshold):
+            
+            # go through the recent gestures and check if they were held long enough
+            for gesture in reversed(self.recent_gestures):
+                g = gesture[0]
+                t = gesture[1]
+
+                # gesture switched :(
+                if g != active_gesture:
+                    # print("switch")
+                    return self.Gestures.NO_GESTURE
+                
+                # gesture stayed the same and held for the hold time
+                if (time.time() - t) > hold_time:
+                    # print("plaeasee")
+                    return active_gesture
+                
+        return self.Gestures.NO_GESTURE
+
+    def close(self):
+        self.cap.release()
+        cv2.destroyAllWindows()
+
+    def menu(self):
+        """Menu mode"""
+        pass
+
+    def teleoperate(self):
+        """teleoperate the hand"""
+        pass
+
+    def dance(self):
+        """Menu mode"""
+        pass
+
+    def walk(self):
+        """Menu mode"""
+        pass
+
+    # def restart(self):
+    #     self.cold_start()
+        
+
 
 # main loop
 def main():
@@ -203,112 +403,112 @@ def main():
                 elif "Pointing_Up" in str(top_gesture):
                     print("Pointing Up")
                 
-            # Check if hand landmarks are detected
-            if result.multi_hand_landmarks:
-                for hand_landmarks in result.multi_hand_landmarks:
-                    tracker.mp_drawing.draw_landmarks(frame, hand_landmarks, tracker.mp_hands.HAND_CONNECTIONS)
+            # # Check if hand landmarks are detected
+            # if result.multi_hand_landmarks:
+            #     for hand_landmarks in result.multi_hand_landmarks:
+            #         tracker.mp_drawing.draw_landmarks(frame, hand_landmarks, tracker.mp_hands.HAND_CONNECTIONS)
 
-                    # Get coordinates of landmarks
-                    landmarks = [(lm.x, lm.y, lm.z) for lm in hand_landmarks.landmark]
+            #         # Get coordinates of landmarks
+            #         landmarks = [(lm.x, lm.y, lm.z) for lm in hand_landmarks.landmark]
 
-                    # Define all landmarks as numpy arrays
-                    wrist = np.array(landmarks[0])            # Wrist
-                    thumb_cmc = np.array(landmarks[1])        # Thumb carpometacarpal joint
-                    thumb_mcp = np.array(landmarks[2])        # Thumb metacarpophalangeal joint
-                    thumb_ip = np.array(landmarks[3])         # Thumb interphalangeal joint
-                    thumb_tip = np.array(landmarks[4])        # Thumb tip
-                    index_mcp = np.array(landmarks[5])        # Index finger metacarpophalangeal joint
-                    index_pip = np.array(landmarks[6])        # Index finger proximal interphalangeal joint
-                    index_dip = np.array(landmarks[7])        # Index finger distal interphalangeal joint
-                    index_tip = np.array(landmarks[8])        # Index finger tip
-                    middle_mcp = np.array(landmarks[9])       # Middle finger metacarpophalangeal joint
-                    middle_pip = np.array(landmarks[10])      # Middle finger proximal interphalangeal joint
-                    middle_dip = np.array(landmarks[11])      # Middle finger distal interphalangeal joint
-                    middle_tip = np.array(landmarks[12])      # Middle finger tip
-                    ring_mcp = np.array(landmarks[13])        # Ring finger metacarpophalangeal joint
-                    ring_pip = np.array(landmarks[14])        # Ring finger proximal interphalangeal joint
-                    ring_dip = np.array(landmarks[15])        # Ring finger distal interphalangeal joint
-                    ring_tip = np.array(landmarks[16])        # Ring finger tip
-                    pinky_mcp = np.array(landmarks[17])       # Pinky finger metacarpophalangeal joint
-                    pinky_pip = np.array(landmarks[18])       # Pinky finger proximal interphalangeal joint
-                    pinky_dip = np.array(landmarks[19])       # Pinky finger distal interphalangeal joint
-                    pinky_tip = np.array(landmarks[20])       # Pinky finger tip
+            #         # Define all landmarks as numpy arrays
+            #         wrist = np.array(landmarks[0])            # Wrist
+            #         thumb_cmc = np.array(landmarks[1])        # Thumb carpometacarpal joint
+            #         thumb_mcp = np.array(landmarks[2])        # Thumb metacarpophalangeal joint
+            #         thumb_ip = np.array(landmarks[3])         # Thumb interphalangeal joint
+            #         thumb_tip = np.array(landmarks[4])        # Thumb tip
+            #         index_mcp = np.array(landmarks[5])        # Index finger metacarpophalangeal joint
+            #         index_pip = np.array(landmarks[6])        # Index finger proximal interphalangeal joint
+            #         index_dip = np.array(landmarks[7])        # Index finger distal interphalangeal joint
+            #         index_tip = np.array(landmarks[8])        # Index finger tip
+            #         middle_mcp = np.array(landmarks[9])       # Middle finger metacarpophalangeal joint
+            #         middle_pip = np.array(landmarks[10])      # Middle finger proximal interphalangeal joint
+            #         middle_dip = np.array(landmarks[11])      # Middle finger distal interphalangeal joint
+            #         middle_tip = np.array(landmarks[12])      # Middle finger tip
+            #         ring_mcp = np.array(landmarks[13])        # Ring finger metacarpophalangeal joint
+            #         ring_pip = np.array(landmarks[14])        # Ring finger proximal interphalangeal joint
+            #         ring_dip = np.array(landmarks[15])        # Ring finger distal interphalangeal joint
+            #         ring_tip = np.array(landmarks[16])        # Ring finger tip
+            #         pinky_mcp = np.array(landmarks[17])       # Pinky finger metacarpophalangeal joint
+            #         pinky_pip = np.array(landmarks[18])       # Pinky finger proximal interphalangeal joint
+            #         pinky_dip = np.array(landmarks[19])       # Pinky finger distal interphalangeal joint
+            #         pinky_tip = np.array(landmarks[20])       # Pinky finger tip
 
-                    # vertical wrt up and down your hand. palm norm is out of the palm
-                    vertical_vec = ring_mcp - wrist
-                    horizontal_vec = index_mcp - pinky_mcp
-                    palm_norm = normal_from_points(wrist, index_mcp, pinky_mcp)
+            #         # vertical wrt up and down your hand. palm norm is out of the palm
+            #         vertical_vec = ring_mcp - wrist
+            #         horizontal_vec = index_mcp - pinky_mcp
+            #         palm_norm = normal_from_points(wrist, index_mcp, pinky_mcp)
 
-                    # vector between mcp and pip. project it onto the palm plane for abduction
-                    index_lower_vector = index_mcp - index_pip
-                    index_middle_vector = index_pip - index_dip
-                    index_upper_vector = index_dip - index_tip
-                    vec_for_flexion_1 = project_vector_onto_plane(index_lower_vector, horizontal_vec)
+            #         # vector between mcp and pip. project it onto the palm plane for abduction
+            #         index_lower_vector = index_mcp - index_pip
+            #         index_middle_vector = index_pip - index_dip
+            #         index_upper_vector = index_dip - index_tip
+            #         vec_for_flexion_1 = project_vector_onto_plane(index_lower_vector, horizontal_vec)
 
-                    # this gets the flexion angles
-                    flexion_1_index = -angle_between(vec_for_flexion_1, vertical_vec) + np.pi
-                    flexion_2_index = angle_between(index_lower_vector, index_middle_vector)
-                    flexion_3_index = angle_between(index_middle_vector, index_upper_vector)
+            #         # this gets the flexion angles
+            #         flexion_1_index = -angle_between(vec_for_flexion_1, vertical_vec) + np.pi
+            #         flexion_2_index = angle_between(index_lower_vector, index_middle_vector)
+            #         flexion_3_index = angle_between(index_middle_vector, index_upper_vector)
 
-                    # Middle finger vectors
-                    middle_lower_vector = middle_mcp - middle_pip
-                    middle_middle_vector = middle_pip - middle_dip
-                    middle_upper_vector = middle_dip - middle_tip
-                    vec_for_flexion_1_middle = project_vector_onto_plane(middle_lower_vector, horizontal_vec)
+            #         # Middle finger vectors
+            #         middle_lower_vector = middle_mcp - middle_pip
+            #         middle_middle_vector = middle_pip - middle_dip
+            #         middle_upper_vector = middle_dip - middle_tip
+            #         vec_for_flexion_1_middle = project_vector_onto_plane(middle_lower_vector, horizontal_vec)
 
-                    # Middle finger flexion angles
-                    flexion_1_middle = -angle_between(vec_for_flexion_1_middle, vertical_vec) + np.pi
-                    flexion_2_middle = angle_between(middle_lower_vector, middle_middle_vector)
-                    flexion_3_middle = angle_between(middle_middle_vector, middle_upper_vector)
+            #         # Middle finger flexion angles
+            #         flexion_1_middle = -angle_between(vec_for_flexion_1_middle, vertical_vec) + np.pi
+            #         flexion_2_middle = angle_between(middle_lower_vector, middle_middle_vector)
+            #         flexion_3_middle = angle_between(middle_middle_vector, middle_upper_vector)
 
-                    # Ring finger vectors
-                    ring_lower_vector = ring_mcp - ring_pip
-                    ring_middle_vector = ring_pip - ring_dip
-                    ring_upper_vector = ring_dip - ring_tip
-                    vec_for_flexion_1_ring = project_vector_onto_plane(ring_lower_vector, horizontal_vec)
+            #         # Ring finger vectors
+            #         ring_lower_vector = ring_mcp - ring_pip
+            #         ring_middle_vector = ring_pip - ring_dip
+            #         ring_upper_vector = ring_dip - ring_tip
+            #         vec_for_flexion_1_ring = project_vector_onto_plane(ring_lower_vector, horizontal_vec)
 
-                    # Ring finger flexion angles
-                    flexion_1_ring = -angle_between(vec_for_flexion_1_ring, vertical_vec) + np.pi
-                    flexion_2_ring = angle_between(ring_lower_vector, ring_middle_vector)
-                    flexion_3_ring = angle_between(ring_middle_vector, ring_upper_vector)
+            #         # Ring finger flexion angles
+            #         flexion_1_ring = -angle_between(vec_for_flexion_1_ring, vertical_vec) + np.pi
+            #         flexion_2_ring = angle_between(ring_lower_vector, ring_middle_vector)
+            #         flexion_3_ring = angle_between(ring_middle_vector, ring_upper_vector)
 
-                    # Thumb vectors
-                    thumb_lower_vector = thumb_mcp - thumb_cmc  # From carpometacarpal to metacarpophalangeal joint
-                    thumb_middle_vector = thumb_mcp - thumb_ip  # From MCP to interphalangeal joint
-                    thumb_upper_vector = thumb_ip - thumb_tip  # From IP to tip
+            #         # Thumb vectors
+            #         thumb_lower_vector = thumb_mcp - thumb_cmc  # From carpometacarpal to metacarpophalangeal joint
+            #         thumb_middle_vector = thumb_mcp - thumb_ip  # From MCP to interphalangeal joint
+            #         thumb_upper_vector = thumb_ip - thumb_tip  # From IP to tip
 
-                    # Projection for first flexion
-                    vec_for_flexion_1_thumb = project_vector_onto_plane(thumb_lower_vector, palm_norm)
+            #         # Projection for first flexion
+            #         vec_for_flexion_1_thumb = project_vector_onto_plane(thumb_lower_vector, palm_norm)
 
-                    # Flexion Angles
-                    flexion_1_thumb = angle_between(vec_for_flexion_1_thumb, vertical_vec)
-                    flexion_2_thumb = angle_between(thumb_lower_vector, thumb_middle_vector)
-                    flexion_3_thumb = angle_between(thumb_middle_vector, thumb_upper_vector)
+            #         # Flexion Angles
+            #         flexion_1_thumb = angle_between(vec_for_flexion_1_thumb, vertical_vec)
+            #         flexion_2_thumb = angle_between(thumb_lower_vector, thumb_middle_vector)
+            #         flexion_3_thumb = angle_between(thumb_middle_vector, thumb_upper_vector)
 
-                    # Abduction (projecting lower vector onto palm plane)
-                    vec_for_abduction_thumb = project_vector_onto_plane(thumb_lower_vector, palm_norm)
-                    abduction_thumb = angle_between(vec_for_abduction_thumb, horizontal_vec)
+            #         # Abduction (projecting lower vector onto palm plane)
+            #         vec_for_abduction_thumb = project_vector_onto_plane(thumb_lower_vector, palm_norm)
+            #         abduction_thumb = angle_between(vec_for_abduction_thumb, horizontal_vec)
 
-                    # Calculate abduction angles 
-                    index_abduction = tracker.decompose_angle(landmarks[0], landmarks[5], landmarks[6], plane='xy')
-                    middle_abduction = tracker.decompose_angle(landmarks[0], landmarks[9], landmarks[10], plane='xy')
-                    ring_abduction = tracker.decompose_angle(landmarks[0], landmarks[13], landmarks[14], plane='xy')
+            #         # Calculate abduction angles 
+            #         index_abduction = tracker.decompose_angle(landmarks[0], landmarks[5], landmarks[6], plane='xy')
+            #         middle_abduction = tracker.decompose_angle(landmarks[0], landmarks[9], landmarks[10], plane='xy')
+            #         ring_abduction = tracker.decompose_angle(landmarks[0], landmarks[13], landmarks[14], plane='xy')
 
-                    # full hand pose
-                    pose = np.array([index_abduction+2*np.pi - .4,flexion_1_index,flexion_2_index,flexion_3_index,
-                                     middle_abduction+2*np.pi - .2,flexion_1_middle,flexion_2_middle,flexion_3_middle,
-                                     ring_abduction+2*np.pi - .2,flexion_1_ring,flexion_2_ring,flexion_3_ring,
-                                     -flexion_1_thumb+.7,flexion_1_thumb*1.5-1.3,-flexion_2_thumb*.8+3.6,flexion_3_thumb])#abduction_thumb, flexion_2_thumb,flexion_3_thumb,])
+            #         # full hand pose
+            #         pose = np.array([index_abduction+2*np.pi - .4,flexion_1_index,flexion_2_index,flexion_3_index,
+            #                          middle_abduction+2*np.pi - .2,flexion_1_middle,flexion_2_middle,flexion_3_middle,
+            #                          ring_abduction+2*np.pi - .2,flexion_1_ring,flexion_2_ring,flexion_3_ring,
+            #                          -flexion_1_thumb+.7,flexion_1_thumb*1.5-1.3,-flexion_2_thumb*.8+3.6,flexion_3_thumb])#abduction_thumb, flexion_2_thumb,flexion_3_thumb,])
 
-                    try:
-                        leap_hand.set_pose(pose)
-                    except Exception as e:
+            #         try:
+            #             leap_hand.set_pose(pose)
+            #         except Exception as e:
                         
-                        print("RESTARTING DUE TO CONNECTION ISSUES")
-                        cap.release()
-                        cv2.destroyAllWindows()
-                        time.sleep(5)
-                        main()
+            #             print("RESTARTING DUE TO CONNECTION ISSUES")
+            #             cap.release()
+            #             cv2.destroyAllWindows()
+            #             time.sleep(5)
+            #             main()
 
             tracker.recognition_result_list.clear()
             cv2.imshow("Hand Tracking", frame)
@@ -323,5 +523,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    # main()
+
+    game = Game()
     
