@@ -302,7 +302,7 @@ class DynamixelClient:
         if errored_ids:
             logging.error('Sync write failed for: %s', str(errored_ids))
 
-        comm_result = sync_writer.txPacket()
+        comm_result = sync_writer.txPacket() # PROBLEMS ARE HERE
         self.handle_packet_result(comm_result, context='sync_write')
 
         sync_writer.clearParam()

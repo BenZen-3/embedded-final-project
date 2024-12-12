@@ -42,7 +42,7 @@ class LeapNode:
         # For example: /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT7W91VW-if00-port0
         self.motors = motors = [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]
 
-        expected_port = 'COM6'
+        expected_port = 'COM7' # NEED TO CHANGE TO SCAN FOR OPEN SERIAL PORTS
         self.dxl_client = DynamixelClient(motors, expected_port, 4000000)
         self.dxl_client.connect()
 
@@ -58,38 +58,40 @@ class LeapNode:
         self.dxl_client.sync_write(motors, np.ones(len(motors)) * self.curr_lim, 102, 2)
         self.dxl_client.write_desired_pos(self.motors, self.curr_pos)
 
-    #Receive LEAP pose and directly control the robot
-    def set_leap(self, pose):
-        self.prev_pos = self.curr_pos
-        self.curr_pos = np.array(pose)
-        self.dxl_client.write_desired_pos(self.motors, self.curr_pos)
+    # #Receive LEAP pose and directly control the robot
+    # def set_leap(self, pose):
+    #     self.prev_pos = self.curr_pos
+    #     self.curr_pos = np.array(pose)
+    #     self.dxl_client.write_desired_pos(self.motors, self.curr_pos)
     #allegro compatibility joint angles.  It adds 180 to make the fully open position at 0 instead of 180
     def set_allegro(self, pose):
         pose = lhu.allegro_to_LEAPhand(pose, zeros=False)
         self.prev_pos = self.curr_pos
         self.curr_pos = np.array(pose)
         self.dxl_client.write_desired_pos(self.motors, self.curr_pos)
+    
+    
     #Sim compatibility for policies, it assumes the ranges are [-1,1] and then convert to leap hand ranges.
-    def set_ones(self, pose):
-        pose = lhu.sim_ones_to_LEAPhand(np.array(pose))
-        self.prev_pos = self.curr_pos
-        self.curr_pos = np.array(pose)
-        self.dxl_client.write_desired_pos(self.motors, self.curr_pos)
-    #read position of the robot
-    def read_pos(self):
-        return self.dxl_client.read_pos()
-    #read velocity
-    def read_vel(self):
-        return self.dxl_client.read_vel()
-    #read current
-    def read_cur(self):
-        return self.dxl_client.read_cur()
-    #These combined commands are faster FYI and return a list of data
-    def pos_vel(self):
-        return self.dxl_client.read_pos_vel()
-    #These combined commands are faster FYI and return a list of data
-    def pos_vel_eff_srv(self):
-        return self.dxl_client.read_pos_vel_cur()
+    # def set_ones(self, pose):
+    #     pose = lhu.sim_ones_to_LEAPhand(np.array(pose))
+    #     self.prev_pos = self.curr_pos
+    #     self.curr_pos = np.array(pose)
+    #     self.dxl_client.write_desired_pos(self.motors, self.curr_pos)
+    # #read position of the robot
+    # def read_pos(self):
+    #     return self.dxl_client.read_pos()
+    # #read velocity
+    # def read_vel(self):
+    #     return self.dxl_client.read_vel()
+    # #read current
+    # def read_cur(self):
+    #     return self.dxl_client.read_cur()
+    # #These combined commands are faster FYI and return a list of data
+    # def pos_vel(self):
+    #     return self.dxl_client.read_pos_vel()
+    # #These combined commands are faster FYI and return a list of data
+    # def pos_vel_eff_srv(self):
+    #     return self.dxl_client.read_pos_vel_cur()
     
 class Tracker:
 
@@ -294,16 +296,19 @@ def main(**kwargs):
                     middle_abduction = tracker.decompose_angle(landmarks[0], landmarks[9], landmarks[10], plane='xy')
                     ring_abduction = tracker.decompose_angle(landmarks[0], landmarks[13], landmarks[14], plane='xy')
 
+                    # print(flexion_1_thumb*1.5-1)
+
 
                     pose = np.array([index_abduction+2*np.pi - .4,flexion_1_index,flexion_2_index,flexion_3_index,
                                      middle_abduction+2*np.pi - .2,flexion_1_middle,flexion_2_middle,flexion_3_middle,
                                      ring_abduction+2*np.pi - .2,flexion_1_ring,flexion_2_ring,flexion_3_ring,
-                                     -flexion_1_thumb+.7,0,-flexion_2_thumb*.8+3.6,flexion_3_thumb])#abduction_thumb, flexion_2_thumb,flexion_3_thumb,])
+                                     -flexion_1_thumb+.7,flexion_1_thumb*1.5-1.3,-flexion_2_thumb*.8+3.6,flexion_3_thumb])#abduction_thumb, flexion_2_thumb,flexion_3_thumb,])
 
-                    try:
-                        leap_hand.set_allegro(pose)
-                    except Exception as e:
-                        print(f"YOU MIGHT WANNA DEAL WITH {e}")
+                    leap_hand.set_allegro(pose)
+                    # try:
+                    #     leap_hand.set_allegro(pose)
+                    # except Exception as e:
+                    #     print(f"YOU MIGHT WANNA DEAL WITH {e}")
 
             cv2.imshow("Hand Tracking", frame)
 
