@@ -8,28 +8,14 @@ import cv2
 import mediapipe as mp
 import numpy as np
 import math
+import serial.tools.list_ports
 
-#######################################################
-"""This can control and query the LEAP Hand
+from mediapipe.tasks import python
+from mediapipe.tasks.python import vision
 
-I recommend you only query when necessary and below 90 samples a second.  Used the combined commands if you can to save time.  Also don't forget about the USB latency settings in the readme.
-
-#Allegro hand conventions:
-#0.0 is the all the way out beginning pose, and it goes positive as the fingers close more and more.
-
-#LEAP hand conventions:
-#180 is flat out home pose for the index, middle, ring, finger MCPs.
-#Applying a positive angle closes the joints more and more to curl closed.
-#The MCP is centered at 180 and can move positive or negative to that.
-
-#The joint numbering goes from Index (0-3), Middle(4-7), Ring(8-11) to Thumb(12-15) and from MCP Side, MCP Forward, PIP, DIP for each finger.
-#For instance, the MCP Side of Index is ID 0, the MCP Forward of Ring is 9, the DIP of Ring is 11
-
-"""
-########################################################
-class LeapNode:
+class LeapHand:
     def __init__(self):
-        ####Some parameters
+        # Some parameters
         # I recommend you keep the current limit from 350 for the lite, and 550 for the full hand
         # Increase KP if the hand is too weak, decrease if it's jittery.
         self.kP = 600
@@ -37,14 +23,17 @@ class LeapNode:
         self.kD = 200
         self.curr_lim = 350
         self.prev_pos = self.pos = self.curr_pos = lhu.allegro_to_LEAPhand(np.zeros(16))
-        #You can put the correct port here or have the node auto-search for a hand at the first 3 ports.
-        # For example ls /dev/serial/by-id/* to find your LEAP Hand. Then use the result.  
-        # For example: /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT7W91VW-if00-port0
         self.motors = motors = [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]
 
-        expected_port = 'COM7' # NEED TO CHANGE TO SCAN FOR OPEN SERIAL PORTS
-        self.dxl_client = DynamixelClient(motors, expected_port, 4000000)
-        self.dxl_client.connect()
+        port_found = False
+        while not port_found:
+
+            try:
+                port_found = self.find_ports(motors) # find port and connect
+            except Exception as e:
+                pass
+            print("port not found... waiting")
+            time.sleep(2)
 
         #Enables position-current control mode and the default parameters, it commands a position and then caps the current so the motors don't overload
         self.dxl_client.sync_write(motors, np.ones(len(motors))*5, 11, 1)
@@ -58,49 +47,56 @@ class LeapNode:
         self.dxl_client.sync_write(motors, np.ones(len(motors)) * self.curr_lim, 102, 2)
         self.dxl_client.write_desired_pos(self.motors, self.curr_pos)
 
-    # #Receive LEAP pose and directly control the robot
-    # def set_leap(self, pose):
-    #     self.prev_pos = self.curr_pos
-    #     self.curr_pos = np.array(pose)
-    #     self.dxl_client.write_desired_pos(self.motors, self.curr_pos)
-    #allegro compatibility joint angles.  It adds 180 to make the fully open position at 0 instead of 180
-    def set_allegro(self, pose):
+    def find_ports(self, motors):
+        """Find open serial ports and test. returns if a port was found"""
+
+        ports = serial.tools.list_ports.comports()
+        ports = [port.device for port in ports]  # name only
+        
+        # scan all ports
+        for port in ports:
+            try:
+                self.dxl_client = DynamixelClient(motors, port, 4000000)
+                self.dxl_client.connect()
+                return True
+                
+            except Exception as e:
+                pass
+
+        return False
+
+    def set_pose(self, pose):
+        """set hand pose"""
         pose = lhu.allegro_to_LEAPhand(pose, zeros=False)
         self.prev_pos = self.curr_pos
         self.curr_pos = np.array(pose)
         self.dxl_client.write_desired_pos(self.motors, self.curr_pos)
     
-    
-    #Sim compatibility for policies, it assumes the ranges are [-1,1] and then convert to leap hand ranges.
-    # def set_ones(self, pose):
-    #     pose = lhu.sim_ones_to_LEAPhand(np.array(pose))
-    #     self.prev_pos = self.curr_pos
-    #     self.curr_pos = np.array(pose)
-    #     self.dxl_client.write_desired_pos(self.motors, self.curr_pos)
-    # #read position of the robot
-    # def read_pos(self):
-    #     return self.dxl_client.read_pos()
-    # #read velocity
-    # def read_vel(self):
-    #     return self.dxl_client.read_vel()
-    # #read current
-    # def read_cur(self):
-    #     return self.dxl_client.read_cur()
-    # #These combined commands are faster FYI and return a list of data
-    # def pos_vel(self):
-    #     return self.dxl_client.read_pos_vel()
-    # #These combined commands are faster FYI and return a list of data
-    # def pos_vel_eff_srv(self):
-    #     return self.dxl_client.read_pos_vel_cur()
-    
 class Tracker:
 
     def __init__(self):
-        # Initialize MediaPipe Hands
+        """Init mediapipe"""
+        self.recognition_result_list = []
         self.mp_hands = mp.solutions.hands
         self.mp_drawing = mp.solutions.drawing_utils
+        self.mp_drawing_styles = mp.solutions.drawing_styles
+        self.base_options = python.BaseOptions(model_asset_path='gesture_recognizer.task')
+        self.options = vision.GestureRecognizerOptions(base_options=self.base_options,
+                                          running_mode=vision.RunningMode.LIVE_STREAM,
+                                          num_hands=1,
+                                          min_hand_detection_confidence=.5,
+                                          min_hand_presence_confidence=.5,
+                                          min_tracking_confidence=.5,
+                                          result_callback=self.save_result)
+        self.recognizer = vision.GestureRecognizer.create_from_options(self.options)
+
+    def save_result(self, result: vision.GestureRecognizerResult,
+                  unused_output_image: mp.Image, timestamp_ms: int):
+
+        self.recognition_result_list.append(result)
 
     def decompose_angle(self, a, b, c, plane='xz'):
+        """decompose Angle"""
         ba = np.array([a[0] - b[0], a[1] - b[1], a[2] - b[2]])
         bc = np.array([c[0] - b[0], c[1] - b[1], c[2] - b[2]])
         
@@ -122,10 +118,6 @@ class Tracker:
         angle = np.arccos(np.clip(cosine_angle, -1.0, 1.0))  # Clip for numerical stability
         return -angle - math.pi
 
-
-
-
-
 def angle_between(v1, v2):
     """Calculates the angle between two 3D vectors in radians."""
 
@@ -141,7 +133,6 @@ def angle_between(v1, v2):
     angle_rad = np.arccos(cos_theta)
     return angle_rad
 
-
 def normal_from_points(p1, p2, p3):
     """Calculate the normal vector to the plane defined by three points."""
 
@@ -151,19 +142,8 @@ def normal_from_points(p1, p2, p3):
     normal = np.cross(v1, v2)
     return normal / np.linalg.norm(normal)  # Normalize the vector
 
-
-
 def project_vector_onto_plane(vector, plane_normal):
-    """
-    Projects a vector onto a plane defined by its normal vector.
-
-    Args:
-        vector (np.array): The vector to be projected.
-        plane_normal (np.array): The normal vector of the plane.
-
-    Returns:
-        np.array: The projected vector.
-    """
+    """Projects a vector onto a plane defind by its normal vector"""
 
     # Normalize the plane normal vector
     plane_normal = plane_normal / np.linalg.norm(plane_normal)
@@ -177,18 +157,20 @@ def project_vector_onto_plane(vector, plane_normal):
     return projected_vector
 
 
-
-
-#init the node
-def main(**kwargs):
-    leap_hand = LeapNode()
+# main loop
+def main():
+    leap_hand = LeapHand()
     tracker = Tracker()
     cap = cv2.VideoCapture(0)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
+    # open hand tracker
     with tracker.mp_hands.Hands(min_detection_confidence=0.7, 
                     min_tracking_confidence=0.7, 
                     max_num_hands=1) as hands:
 
+        # only while the ecapture window is open
         while cap.isOpened():
             ret, frame = cap.read()
             if not ret:
@@ -197,12 +179,30 @@ def main(**kwargs):
             # Flip and convert the frame color
             frame = cv2.flip(frame, 1)
             image_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=image_rgb)
 
             # Process the frame and get hand landmarks
             result = hands.process(image_rgb)
+            tracker.recognizer.recognize_async(mp_image, time.time_ns() // 1_000_000)
 
-            joint_angles = []
-
+            if tracker.recognition_result_list:
+                top_gesture = tracker.recognition_result_list[0].gestures
+                # print(tracker.recognition_result_list[0].gestures)
+                if "Open_Palm" in str(top_gesture):
+                    print("Open Palm")
+                elif "Victory" in str(top_gesture):
+                    print("Victory")
+                elif "Closed_Fist" in str(top_gesture):
+                    print("Closed Fist")
+                elif "Thumb_Up" in str(top_gesture):
+                    print("Thumb Up")
+                elif "Thumb_Down" in str(top_gesture):
+                    print("Thumb Down")
+                elif "ILoveYou" in str(top_gesture):
+                    print("I Love You")
+                elif "Pointing_Up" in str(top_gesture):
+                    print("Pointing Up")
+                
             # Check if hand landmarks are detected
             if result.multi_hand_landmarks:
                 for hand_landmarks in result.multi_hand_landmarks:
@@ -211,7 +211,6 @@ def main(**kwargs):
                     # Get coordinates of landmarks
                     landmarks = [(lm.x, lm.y, lm.z) for lm in hand_landmarks.landmark]
 
-                    # palm frame
                     # Define all landmarks as numpy arrays
                     wrist = np.array(landmarks[0])            # Wrist
                     thumb_cmc = np.array(landmarks[1])        # Thumb carpometacarpal joint
@@ -235,7 +234,6 @@ def main(**kwargs):
                     pinky_dip = np.array(landmarks[19])       # Pinky finger distal interphalangeal joint
                     pinky_tip = np.array(landmarks[20])       # Pinky finger tip
 
-                    
                     # vertical wrt up and down your hand. palm norm is out of the palm
                     vertical_vec = ring_mcp - wrist
                     horizontal_vec = index_mcp - pinky_mcp
@@ -291,25 +289,28 @@ def main(**kwargs):
                     vec_for_abduction_thumb = project_vector_onto_plane(thumb_lower_vector, palm_norm)
                     abduction_thumb = angle_between(vec_for_abduction_thumb, horizontal_vec)
 
-                    # # Calculate abduction angles for the index finger
+                    # Calculate abduction angles 
                     index_abduction = tracker.decompose_angle(landmarks[0], landmarks[5], landmarks[6], plane='xy')
                     middle_abduction = tracker.decompose_angle(landmarks[0], landmarks[9], landmarks[10], plane='xy')
                     ring_abduction = tracker.decompose_angle(landmarks[0], landmarks[13], landmarks[14], plane='xy')
 
-                    # print(flexion_1_thumb*1.5-1)
-
-
+                    # full hand pose
                     pose = np.array([index_abduction+2*np.pi - .4,flexion_1_index,flexion_2_index,flexion_3_index,
                                      middle_abduction+2*np.pi - .2,flexion_1_middle,flexion_2_middle,flexion_3_middle,
                                      ring_abduction+2*np.pi - .2,flexion_1_ring,flexion_2_ring,flexion_3_ring,
                                      -flexion_1_thumb+.7,flexion_1_thumb*1.5-1.3,-flexion_2_thumb*.8+3.6,flexion_3_thumb])#abduction_thumb, flexion_2_thumb,flexion_3_thumb,])
 
-                    leap_hand.set_allegro(pose)
-                    # try:
-                    #     leap_hand.set_allegro(pose)
-                    # except Exception as e:
-                    #     print(f"YOU MIGHT WANNA DEAL WITH {e}")
+                    try:
+                        leap_hand.set_pose(pose)
+                    except Exception as e:
+                        
+                        print("RESTARTING DUE TO CONNECTION ISSUES")
+                        cap.release()
+                        cv2.destroyAllWindows()
+                        time.sleep(5)
+                        main()
 
+            tracker.recognition_result_list.clear()
             cv2.imshow("Hand Tracking", frame)
 
             if cv2.waitKey(10) & 0xFF == ord('q'):
