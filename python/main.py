@@ -74,6 +74,10 @@ class LeapHand:
         self.curr_pos = np.array(pose)
         self.dxl_client.write_desired_pos(self.motors, self.curr_pos)
 
+    def get_pose(self):
+        """get the current pose"""
+        return self.dxl_client.read_pos()
+
     def csv_player(self, csv_path):
         """play from a CSV file"""
         try:
@@ -87,18 +91,6 @@ class LeapHand:
                 pose = [float(value) for value in row]
                 self.set_pose(pose)
                 self.current_row += 1
-
-                # if self.current_row < len(data):
-                #     row = data[self.current_row % len(data)]
-                #     pose = [float(value) for value in row]
-                #     # pose[0] += 2*np.pi
-                #     # pose[4] += 2*np.pi
-                #     # pose[8] += 2*np.pi
-                #     # print(pose)
-                #     self.set_pose(pose)
-                #     self.current_row += 1
-                # else:
-                #     print("All poses have been played.")
 
         except FileNotFoundError:
             print(f"Error: File {csv_path} not found.")
@@ -319,7 +311,15 @@ class Game:
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
+    def read_pose(self):
+        """read the poses to the consol"""
+        while(True):
+            pose = self.leap_hand.get_pose()
+            print(pose)
+            time.sleep(.06)
+
     def loop(self):
+        """loop"""
 
         with self.tracker.mp_hands.Hands(min_detection_confidence=0.7, 
                     min_tracking_confidence=0.7, 
@@ -504,7 +504,7 @@ class Game:
 
     def walk(self):
         """When you walkin"""
-        self.leap_hand.csv_player("joint_angles.csv")
+        self.leap_hand.csv_player("joint_angles_2.csv")
 
     def close(self):
         """close the stuffs"""
@@ -517,6 +517,7 @@ if __name__ == "__main__":
 
     game = Game()
     game.start()
+    # game.read_pose()
     game.loop()
 
     # while True:
