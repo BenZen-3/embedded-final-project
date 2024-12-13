@@ -299,7 +299,7 @@ class Game:
         self.state = self.GameState.TELEOPERATION
         self.recent_gestures = []
         self.landmarks = None
-        self.hold_time = 2
+        self.hold_time = 1
         self.menu_select = 0
 
     def start(self):
@@ -342,19 +342,20 @@ class Game:
 
                 # check for state changes
                 self.check_state_change()
-                print(self.state)
+                # print(self.state)
 
                 # run the current state
                 self.run_state(frame, result)
 
                 # end of loop
                 self.tracker.recognition_result_list.clear() # clear the big list
-                cv2.imshow("Hand Tracking", frame) # display (can be removed)
+                #cv2.imshow("Hand Tracking", frame) # display (can be removed)
 
                 if cv2.waitKey(10) & 0xFF == ord('q'):
                     break
 
-                time.sleep(.06)
+                # time.sleep(.06)
+                print(time.time())
 
         self.close()
                 
